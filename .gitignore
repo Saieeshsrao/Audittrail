@@ -1,0 +1,10 @@
+# Ignore virtual environment directory
+venv/
+
+# Ignore Python bytecode files
+*.pyc
+__pycache__/
+qlora_llama3b_finetuned/
+# Ignore other files or directories you don't want to track
+.env
+*.log
