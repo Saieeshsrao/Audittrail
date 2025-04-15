@@ -130,14 +130,18 @@
 
 #     return df
 
-import ollama
 import re
 import pandas as pd
+from openai import OpenAI
 
 def parse_violation_report(response_text):
     """
     Parses the violation report and converts it into a structured DataFrame.
     """
+    # Clean the response - extract content after </think> if it exists
+    if "</think>" in response_text:
+        response_text = response_text.split("</think>")[-1].strip()
+    
     # Extracting table rows using regex
     rows = [row.split(" | ") for row in response_text.split("\n") if "|" in row]
 
@@ -160,12 +164,15 @@ def parse_violation_report(response_text):
     return df
 
 
-def compare_logs_and_sop(sop_text, log_text, model_name):
-    print(log_text)
-    print(sop_text)
+def compare_logs_and_sop(sop_text, log_text, model_name=None):
     """
-    Compares the SOP text with the log text using LLM and returns anomalies.
+    Compares the SOP text with the log text using RunPod API and returns anomalies.
     """
+    # Initialize the OpenAI client with RunPod details
+    client = OpenAI(
+        api_key="rpa_ROXJL6ZYMIOSDORA989IE314E6DW7DAM46LOAT2E14xv8r",
+        base_url="https://api.runpod.ai/v2/c5f4280t0dtrlx/openai/v1"
+    )
 
     prompt = f"""
 ### **Role:**  
@@ -208,22 +215,33 @@ SOP:
 --------------------------------
 
 **Rules:**  
-✅ **Do NOT modify the table format.**  
-✅ **Only report deviations ≥95% confidence.**  
-✅ **Quote exact text from logs and SOPs.**  
-✅ **Reject uncertain findings.**  
+**Do NOT modify the table format.**  
+**Only report deviations ≥95% confidence.**  
+**Quote exact text from logs and SOPs.**  
+**Reject uncertain findings.**  
+**Do not give anomalies which are physical actions in nature which are defined in the SOP and not present in the logs** 
 """
 
-    response = ollama.chat(
-        model=model_name,
-        messages=[{"role": "user", "content": prompt}],
-        options={
-            'num_ctx': 4096,  # More context memory
-            'temperature': 0.2,  # Less randomness
-            'top_p': 0.8,
-        },
-    )
-
-    return response["message"]["content"]
+    try:
+        # Process the prompt using RunPod API
+        response = client.chat.completions.create(
+            model="Qwen/QwQ-32B-AWQ",
+            messages=[
+                {"role": "system", "content": "You are a strict compliance auditor specializing in SOP-log matching. Your job is to compare logs against SOPs and report only high-confidence violations."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            top_p=0.8
+        )
+        
+        result = response.choices[0].message.content
+        
+        # Extract content after </think> if it exists
+        if "</think>" in result:
+            result = result.split("</think>")[-1].strip()
+            
+        return result
+    except Exception as e:
+        return f"Error processing analysis: {str(e)}"
    
    
