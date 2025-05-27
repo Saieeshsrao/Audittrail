@@ -133,6 +133,11 @@
 import re
 import pandas as pd
 from openai import OpenAI
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
 
 def parse_violation_report(response_text):
     """
@@ -168,42 +173,60 @@ def compare_logs_and_sop(sop_text, log_text, model_name=None):
     """
     Compares the SOP text with the log text using RunPod API and returns anomalies.
     """
-    # Initialize the OpenAI client with RunPod details
+    # Initialize the OpenAI client with RunPod details from environment variables
     client = OpenAI(
-        api_key="rpa_ROXJL6ZYMIOSDORA989IE314E6DW7DAM46LOAT2E14xv8r",
-        base_url="https://api.runpod.ai/v2/c5f4280t0dtrlx/openai/v1"
+        api_key=os.getenv('RUNPOD_API_KEY'),
+        base_url=os.getenv('RUNPOD_BASE_URL')
     )
-
     prompt = f"""
-### **Role:**  
-You are a strict compliance auditor specializing in **SOP-log matching**. Your job is to **compare logs against SOPs** and report **only high-confidence violations** (≥95% certainty).
+### ROLE:
+You are a **compliance auditor AI** specializing in **SOP-log matching**.  
+Your job is to **strictly compare each log entry** against the **Standard Operating Procedure (SOP)** and identify **only high-confidence violations (≥95%)**.
 
 ---
 
-### **Instructions:**  
-1. **Analyze Each Log Entry Separately**  
-   - If a log follows all SOP rules → Mark it **Compliant**.  
-   - If a log deviates → **Mark it as a Violation and provide full details**.
+### TASK INSTRUCTIONS:
 
-2. **Severity Definitions (Follow Strictly):**  
-   - **Critical**: Direct safety risk, regulatory non-compliance, or financial impact.  
-   - **High**: Major process failure or procedural error affecting quality or efficiency.  
-   - **Medium**: Minor process deviation but no immediate risk.  
+1. **Process Each Log Entry Independently**
+   - If a log fully aligns with relevant SOP rules → Mark as **Compliant**.
+   - If a log violates any SOP requirement → Mark as **Violation**, with full details.
+   - Ignore physical/manual actions described in SOP that do not appear in logs unless explicitly logged.
 
-3. **Output Structure (Strictly Follow This Table Format)**  
-   - If violations exist: **Output exactly in this table format**  
+2. **Violation Reporting Criteria**
+   - Only report deviations that you are **≥95% confident** are genuine violations.
+   - Use **exact matching** of SOP phrases and log actions — no assumptions or inferred behavior.
+   - **Reject uncertain or borderline cases** — this audit is only for clear, high-confidence violations.
 
-     | Severity  | SOP Section | SOP Requirement  | Log Entry (Row #) | Deviation Details | Confidence |
-     |-----------|------------|------------------|-------------------|-------------------|------------|
-     | Critical/High/Medium  | X.X | "Exact SOP text" | "Log text (Row #X)" | Explanation | 95%+ |
-
-   - If all logs are compliant:  
-
-     | Status    | Details                                  |
-     |-----------|------------------------------------------|
-     | Compliant | All operations match SOP requirements    |
+3. **Violation Severity Classification**
+   - **Critical** → Safety risk, regulatory non-compliance, or direct financial impact.
+   - **High** → Major process or procedural failure that affects quality, traceability, or efficiency.
+   - **Medium** → Minor procedural deviation with no immediate safety or compliance risk.
 
 ---
+
+### OUTPUT FORMAT (STRICT):
+- If there are violations, report them **exactly in the table below** (do not change headers or structure):
+
+  | Severity  | SOP Section | SOP Requirement  | Log Entry (Row #) | Deviation Details | Confidence |
+  |-----------|-------------|------------------|-------------------|-------------------|------------|
+  | Critical/High/Medium | X.X | "Exact text from SOP" | "Exact log entry (Row #X)" | Explain how it deviates | 95%+ |
+
+- If **all logs match the SOP**, return this table exactly:
+
+  | Status    | Details                               |
+  |-----------|----------------------------------------|
+  | Compliant | All operations match SOP requirements |
+
+---
+
+### EXCLUSION RULE:
+Do NOT report violations if:
+- The SOP refers to **physical/manual actions** (e.g., "shut the valve", "clean surface") that are **not logged** and **not expected in log files**.
+
+---
+
+### INPUT DATA
+
 Logs:
 --------------------------------
 {log_text}
@@ -214,13 +237,55 @@ SOP:
 {sop_text}
 --------------------------------
 
-**Rules:**  
-**Do NOT modify the table format.**  
-**Only report deviations ≥95% confidence.**  
-**Quote exact text from logs and SOPs.**  
-**Reject uncertain findings.**  
-**Do not give anomalies which are physical actions in nature which are defined in the SOP and not present in the logs** 
 """
+
+#     prompt = f"""
+# ### **Role:**  
+# You are a strict compliance auditor specializing in **SOP-log matching**. Your job is to **compare logs against SOPs** and report **only high-confidence violations**.
+
+# ---
+
+# ### **Instructions:**  
+# 1. **Analyze Each Log Entry Separately**  
+#    - If a log follows all SOP rules → Mark it **Compliant**.  
+#    - If a log deviates → **Mark it as a Violation and provide full details**.
+
+# 2. **Severity Definitions (Follow Strictly):**  
+#    - **Critical**: Direct safety risk, regulatory non-compliance, or financial impact.  
+#    - **High**: Major process failure or procedural error affecting quality or efficiency.  
+#    - **Medium**: Minor process deviation but no immediate risk.  
+
+# 3. **Output Structure (Strictly Follow This Table Format)**  
+#    - If violations exist: **Output exactly in this table format**  
+
+#      | Severity  | SOP Section | SOP Requirement  | Log Entry (Row #) | Deviation Details | Confidence |
+#      |-----------|------------|------------------|-------------------|-------------------|------------|
+#      | Critical/High/Medium  | X.X | "Exact SOP text" | "Log text (Row #X)" | Explanation | 95%+ |
+
+#    - If all logs are compliant:  
+
+#      | Status    | Details                                  |
+#      |-----------|------------------------------------------|
+#      | Compliant | All operations match SOP requirements    |
+
+# ---
+# Logs:
+# --------------------------------
+# {log_text}
+# --------------------------------
+
+# SOP:
+# --------------------------------
+# {sop_text}
+# --------------------------------
+
+# **Rules:**  
+# **Do NOT modify the table format.**  
+# **Only report deviations ≥95% confidence.**  
+# **Quote exact text from logs and SOPs.**  
+# **Reject uncertain findings.**  
+# **Do not give anomalies which are physical actions in nature which are defined in the SOP and not present in the logs** 
+# """
 
     try:
         # Process the prompt using RunPod API

@@ -1,2 +1,0 @@
-FROM llama3
-PARAMETER model_path "./finetuned_llama32_3b"
