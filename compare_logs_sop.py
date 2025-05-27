@@ -143,30 +143,46 @@ def parse_violation_report(response_text):
     """
     Parses the violation report and converts it into a structured DataFrame.
     """
-    # Clean the response - extract content after </think> if it exists
-    if "</think>" in response_text:
-        response_text = response_text.split("</think>")[-1].strip()
-    
-    # Extracting table rows using regex
-    rows = [row.split(" | ") for row in response_text.split("\n") if "|" in row]
+    try:
+        # Clean the response - extract content after </think> if it exists
+        if "</think>" in response_text:
+            response_text = response_text.split("</think>")[-1].strip()
+        
+        # Find the table content using a more robust pattern
+        table_pattern = r"\|.*?\|.*?\|.*?\|.*?\|.*?\|.*?\|"
+        table_matches = re.findall(table_pattern, response_text, re.DOTALL)
+        
+        if not table_matches:
+            print("No table data found in the response.")
+            return pd.DataFrame()
 
-    if len(rows) < 2:  # At least headers + one row required
-        print("No structured table data found.")
-        return pd.DataFrame()  # Return an empty DataFrame instead of None
+        # Process each row
+        rows = []
+        for row in table_matches:
+            # Split by | and clean each cell
+            cells = [cell.strip() for cell in row.split("|")[1:-1]]
+            if len(cells) >= 6:  # Ensure we have all required columns
+                rows.append(cells)
 
-    # Extracting headers and cleaning rows
-    headers = [col.strip() for col in rows[0]]
-    data = []
-    for row in rows[1:]:
-        if len(row) == len(headers):
-            cleaned_row = [col.strip() for col in row]
-            # Only add rows that contain actual data (not just empty strings)
-            if any(col != "" for col in cleaned_row):
-                data.append(cleaned_row)
+        if len(rows) < 2:  # Need at least headers + one data row
+            print("Insufficient table data found.")
+            return pd.DataFrame()
 
-    # Creating a DataFrame
-    df = pd.DataFrame(data, columns=headers)
-    return df
+        # Extract headers and data
+        headers = rows[0]
+        data = rows[1:]
+
+        # Create DataFrame
+        df = pd.DataFrame(data, columns=headers)
+        
+        # Clean up any remaining whitespace
+        df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+        
+        return df
+
+    except Exception as e:
+        print(f"Error parsing violation report: {str(e)}")
+        return pd.DataFrame()
 
 
 def compare_logs_and_sop(sop_text, log_text, model_name=None):
